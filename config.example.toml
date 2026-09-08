@@ -1,0 +1,80 @@
+[profile.mgimo]
+dspace_version = "6.3"
+ui = "jspui"
+cli_path = "/dspace/bin/dspace"
+install_root = "/dspace"
+admin_eperson = "v.vinogradov@inno.mgimo.ru"
+handle_prefix = "123456789"
+tomcat_service = "tomcat8"
+tomcat_user = "tomcat8"
+backup_dir = "/dspace-copy/db_backup"
+
+[profile.mgimo.ssh]
+host = "172.17.0.35"
+user = "open"
+port = 22
+identity_file = "~/.ssh/id_dspace_mgimo"
+
+[profile.mgimo.db]
+host = "127.0.0.1"
+port = 5432
+name = "dspace"
+user = "dspace"
+password = "env:DSPACE_MGIMO_DB_PASSWORD"
+ssh_peer_user = "postgres"
+
+[profile.mgimo.assetstore]
+root = "/dspace/assetstore"
+store_number = 0
+directory_levels = 3
+digits_per_level = 2
+
+[profile.mgimo.api]
+unpaywall_email = "research@mgimo.ru"
+crossref_mailto = "research@mgimo.ru"
+openalex_mailto = "research@mgimo.ru"
+core_api_key = "env:CORE_API_KEY"
+llm_provider = "deepseek"
+llm_base_url = "https://api.deepseek.com/v1"
+llm_model = "deepseek-chat"
+llm_api_key = "env:DEEPSEEK_API_KEY"
+
+[profile.example_university]
+dspace_version = "7.6"
+ui = "dspace-angular"
+cli_path = "/dspace/bin/dspace"
+install_root = "/dspace"
+admin_eperson = "repo-admin@example.edu"
+handle_prefix = "20.500.12345"
+tomcat_service = "tomcat9"
+tomcat_user = "tomcat"
+backup_dir = "/var/backups/dspace"
+
+[profile.example_university.ssh]
+host = "repository.example.edu"
+user = "dspace-admin"
+port = 22
+identity_file = "~/.ssh/id_dspace_example_university"
+
+[profile.example_university.db]
+host = "127.0.0.1"
+port = 5432
+name = "dspace"
+user = "dspace"
+password = "env:DSPACE_EXAMPLE_UNIVERSITY_DB_PASSWORD"
+
+[profile.example_university.assetstore]
+root = "/dspace/assetstore"
+store_number = 0
+directory_levels = 3
+digits_per_level = 2
+
+[profile.example_university.api]
+unpaywall_email = "library@example.edu"
+crossref_mailto = "library@example.edu"
+openalex_mailto = "library@example.edu"
+core_api_key = "env:CORE_API_KEY_EXAMPLE_UNIVERSITY"
+llm_provider = "openai"
+llm_base_url = "https://api.openai.com/v1"
+llm_model = "gpt-4o-mini"
+llm_api_key = "env:OPENAI_API_KEY_EXAMPLE_UNIVERSITY"

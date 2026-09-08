@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+dist/
+build/
+.env
+config.toml
+*.dump
+*.log
+
+# Local working data (SAF packages, batch CSVs, LLM checkpoints)
+SimpleArchiveFormat*/
+batch_*.csv
+*.checkpoint.json
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Local document build scratch (docx generation)
+.docx-build/
