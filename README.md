@@ -104,6 +104,10 @@ opencode                   # then follow DEMO.md
 > The server is built on the `mcp` 1.x SDK (`FastMCP`); the dependency is
 > pinned to `mcp<2` because 2.x renamed that API.
 
+Real-world walkthrough: [`examples/book_severnaya_evropa_2026/`](examples/book_severnaya_evropa_2026/README.md)
+replays the deposit of a 78-paper conference volume with these tools and
+checks the result item-for-item against the original packages (in Russian).
+
 ## Configure
 
 Copy `config.example.toml` to `~/.config/dspace-mcp/config.toml` (or point

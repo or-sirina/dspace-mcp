@@ -1,0 +1,36 @@
+Рабочий каталог подготовлен: <work>, PDF (симлинки): 79
+
+=== Шаг 1. saf_build_from_csv: volume.csv -> saf_volume ===
+{"status":"ok","saf_dir":"<work>/saf_volume","item_count":1,"zip_path":null,"warnings":[],"unused_files":"79 файлов (PDF статей лежат в той же папке, том их не использует)"}
+
+=== Шаг 2. saf_build_from_csv: articles.csv -> saf_articles ===
+{"status":"ok","saf_dir":"<work>/saf_articles","item_count":78,"zip_path":null,"warnings":[],"unused_files":["978-5-9228-3244-1.pdf","volume.csv"]}
+
+=== Шаг 3. saf_validate: saf_volume ===
+{"status":"ok","issue_count":0,"issues":[]}
+
+=== Шаг 3. saf_validate: saf_articles ===
+{"status":"ok","issue_count":0,"issues":[]}
+
+=== Шаг 4. Сравнение с эталоном (нормализованный XML: множество (schema,element,qualifier,language,value)) ===
+
+=== saf_volume: идентичных 1/1 ===
+{"diffs":[],"diff_count":0}
+
+=== saf_articles: идентичных 78/78 ===
+{"diffs":[],"diff_count":0}
+
+=== Шаг 5. collection_create (confirm=False, allow_db_write=False) ===
+{"status":"blocked","executed":false,"reason":"collection_create writes directly to the database/assetstore. Retry with allow_db_write=True; a fresh backup will be taken automatically first."}
+
+=== Шаг 6a. saf_import статей (confirm=False) ===
+{"status":"dry_run","executed":false,"would_run":["scp <work>/saf_articles.zip -> /tmp/dspace_mcp_saf_saf_articles.zip","rm -rf /tmp/dspace_mcp_saf_saf_articles && mkdir -p /tmp/dspace_mcp_saf_saf_articles && unzip -oq /tmp/dspace_mcp_saf_saf_articles.zip -d /tmp/dspace_mcp_saf_saf_articles","sudo dspace import -a -e admin@example.org -c 123456789/99999 -s /tmp/dspace_mcp_saf_saf_articles/saf_articles -m /tmp/dspace_mcp_mapfile_saf_articles.txt","chown -R tomcat8:tomcat8 /dspace/assetstore"],"predicted_effect":"Imports 78 item(s) from <work>/saf_articles into collection 123456789/99999.","item_count":78,"validation_issues":[]}
+
+=== Шаг 6b. saf_import тома (confirm=False) ===
+{"status":"dry_run","executed":false,"would_run":["scp <work>/saf_volume.zip -> /tmp/dspace_mcp_saf_saf_volume.zip","rm -rf /tmp/dspace_mcp_saf_saf_volume && mkdir -p /tmp/dspace_mcp_saf_saf_volume && unzip -oq /tmp/dspace_mcp_saf_saf_volume.zip -d /tmp/dspace_mcp_saf_saf_volume","sudo dspace import -a -e admin@example.org -c 123456789/8577 -s /tmp/dspace_mcp_saf_saf_volume/saf_volume -m /tmp/dspace_mcp_mapfile_saf_volume.txt","chown -R tomcat8:tomcat8 /dspace/assetstore"],"predicted_effect":"Imports 1 item(s) from <work>/saf_volume into collection 123456789/8577.","item_count":1,"validation_issues":[]}
+
+=== Шаг 7a. filter_media (confirm=False) ===
+{"status":"dry_run","executed":false,"would_run":["JAVA_OPTS includes '-Djavax.accessibility.assistive_technologies='","dspace filter-media -i 123456789/99999 -p 'PDF Text Extractor'"],"predicted_effect":"Runs the 'PDF Text Extractor' media filter over 123456789/99999 (no limit -- processes everything pending)."}
+
+=== Шаг 7b. index_discovery: пропущен (у инструмента нет confirm, выполняется сразу) ===
+Для реального запуска после импорта: dspace index-discovery -i 123456789/99999

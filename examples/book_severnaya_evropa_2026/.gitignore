@@ -1,0 +1,7 @@
+# рабочий каталог run_example.py (копии PDF, собранные SAF, zip)
+work/
+SimpleArchiveFormat*/
+saf_volume/
+saf_articles/
+*.zip
+*.pdf
