@@ -11,7 +11,7 @@ registration snippet for each supported client.
 
 ## 1. Prerequisites
 
-- **Python >= 3.10** and [`uv`](https://docs.astral.sh/uv/) on the machine that
+- **Python >= 3.11** and [`uv`](https://docs.astral.sh/uv/) on the machine that
   will host the server. (If you prefer, any MCP client can instead run the
   entrypoint with a plain Python virtualenv; `uv` is only the documented
   shortcut.)

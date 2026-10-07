@@ -58,7 +58,7 @@ unroutable host) and report the exact remote commands they would run.
 
 ## Install
 
-Requires Python >=3.10 and [`uv`](https://docs.astral.sh/uv/).
+Requires Python >=3.11 and [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/or-sirina/dspace-mcp.git
@@ -86,6 +86,23 @@ See [docs/INSTALLATION.md](docs/INSTALLATION.md) for ready-to-paste
 registration snippets for Claude Desktop / Claude Code, Cursor, VS Code
 (Copilot, Cline, Roo Code), Continue.dev, opencode, DeepSeek Harness, and any
 generic stdio client.
+
+## Quick demo (opencode)
+
+A ready-to-run demo lives in [`demo/opencode/`](demo/opencode/DEMO.md): a
+project-level `opencode.json`, a secret-free demo profile pointing at an
+unroutable host, three sample articles, and a scripted scenario (list tools →
+build SAF → validate → dry-run `saf_import` → harvest → `dspace_ping`).
+
+```bash
+cd demo/opencode
+opencode mcp list          # expect: dspace connected
+uv --directory ../.. run python demo/opencode/smoke_test.py   # no LLM needed
+opencode                   # then follow DEMO.md
+```
+
+> The server is built on the `mcp` 1.x SDK (`FastMCP`); the dependency is
+> pinned to `mcp<2` because 2.x renamed that API.
 
 ## Configure
 
@@ -287,7 +304,7 @@ report/fix the mismatch.
   profile before trusting the SSH-dependent tools.
 - An automated `pytest` suite (`tests/`) covers the local-only paths — SAF
   building/validation/repair, OJS conversion, dedup/normalization helpers,
-  the guarded-write gates, and version resolution (Python 3.10-3.13).
+  the guarded-write gates, and version resolution (Python 3.11-3.13).
 
 ## Development
 

@@ -41,13 +41,18 @@ def check_db_write(
     allow_db_write: bool,
     backup_fn: Callable[[], dict],
     action: str,
+    confirm: bool = True,
 ) -> dict | None:
     """Gate a direct DB/assetstore mutation.
 
     Returns a "blocked" dict (backup NOT taken) if allow_db_write is False.
-    Otherwise runs backup_fn() (expected to perform a fresh pg_dump) and
-    returns {"status": "backed_up", "backup": <result>} so the caller can
-    merge it into its own response, then proceeds with the mutation.
+    If confirm is False (dry run) no backup is taken either: returns
+    {"status": "backup_pending", "executed": False} so previews can mention it.
+    Otherwise runs backup_fn() (expected to perform a fresh pg_dump). If the
+    backup fails (raises, or returns a status other than "ok"), returns an
+    "error" dict with stage "backup" and the caller MUST stop -- see
+    is_stop(). On success returns {"status": "backed_up", "backup": <result>}
+    so the caller can merge it into its own response, then proceed.
     """
     if not allow_db_write:
         return {
@@ -59,4 +64,27 @@ def check_db_write(
                 f"taken automatically first."
             ),
         }
-    return {"status": "backed_up", "backup": backup_fn()}
+    if not confirm:
+        return {
+            "status": "backup_pending",
+            "executed": False,
+            "note": "A fresh backup will be taken when confirm=True.",
+        }
+    try:
+        backup = backup_fn()
+    except Exception as exc:  # noqa: BLE001 - any failure must block the write
+        backup = {"status": "error", "stage": "backup", "reason": f"{type(exc).__name__}: {exc}"}
+    if not isinstance(backup, dict) or backup.get("status") != "ok":
+        return {
+            "status": "error",
+            "stage": "backup",
+            "executed": False,
+            "reason": f"{action} aborted: pre-write backup failed; nothing was changed.",
+            "backup": backup,
+        }
+    return {"status": "backed_up", "backup": backup}
+
+
+def is_stop(gate: dict | None) -> bool:
+    """True if a check_db_write() result means the caller must return it as-is."""
+    return gate is not None and gate.get("status") in ("blocked", "error")

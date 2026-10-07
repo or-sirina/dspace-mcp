@@ -123,7 +123,9 @@ def normalize_authors(profile: Profile, confirm: bool = False, allow_db_write: b
         from . import admin as admin_mod  # local import to avoid a cycle
         return admin_mod.db_backup(profile)
 
-    gate = guards.check_db_write(allow_db_write, do_backup, "normalize_authors")
+    gate = guards.check_db_write(allow_db_write, do_backup, "normalize_authors", confirm=confirm)
+    if gate is not None and gate.get("status") == "error":
+        return gate
     if gate is not None and gate.get("status") == "blocked":
         return {
             "status": "preview",
@@ -194,7 +196,9 @@ def assign_coar_types(
         from . import admin as admin_mod
         return admin_mod.db_backup(profile)
 
-    gate = guards.check_db_write(allow_db_write, do_backup, "assign_coar_types")
+    gate = guards.check_db_write(allow_db_write, do_backup, "assign_coar_types", confirm=confirm)
+    if gate is not None and gate.get("status") == "error":
+        return gate
     if gate is not None and gate.get("status") == "blocked":
         return {
             "status": "preview",
@@ -392,7 +396,9 @@ def apply_orcid_matches(
         from . import admin as admin_mod
         return admin_mod.db_backup(profile)
 
-    gate = guards.check_db_write(allow_db_write, do_backup, "apply_orcid_matches")
+    gate = guards.check_db_write(allow_db_write, do_backup, "apply_orcid_matches", confirm=confirm)
+    if gate is not None and gate.get("status") == "error":
+        return gate
     if gate is not None and gate.get("status") == "blocked":
         return {"status": "preview", "would_apply": len(unambiguous), "note": "Preview only. " + gate["reason"]}
 

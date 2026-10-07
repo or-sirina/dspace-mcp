@@ -8,7 +8,9 @@ module -- it runs in-process. See dspace/cli.py vs scholar/*.py.
 
 from __future__ import annotations
 
+import os
 import shlex
+import shutil
 import subprocess
 from dataclasses import dataclass
 
@@ -22,6 +24,10 @@ class RemoteError(RuntimeError):
         super().__init__(msg)
 
 
+class SSHAuthError(RuntimeError):
+    """ssh.password is configured but cannot be used (no sshpass available)."""
+
+
 @dataclass
 class CommandResult:
     returncode: int
@@ -32,6 +38,32 @@ class CommandResult:
     @property
     def ok(self) -> bool:
         return self.returncode == 0
+
+
+def _secrets(profile: Profile) -> list[str]:
+    vals = [profile.ssh.password, profile.ssh.sudo_password, profile.db.password]
+    # longest first so a secret that contains another is fully replaced
+    return sorted({v for v in vals if v}, key=len, reverse=True)
+
+
+def redact(profile: Profile, text: str | None) -> str:
+    """Replace every secret the profile holds (and its shell-quoted form) with '***'."""
+    if not text:
+        return text or ""
+    for secret in _secrets(profile):
+        text = text.replace(shlex.quote(secret), "***").replace(secret, "***")
+    return text
+
+
+def with_pgpassword(profile: Profile, cmd: str) -> tuple[str, str | None]:
+    """Make `cmd` read PGPASSWORD from stdin instead of carrying it in argv.
+
+    Returns (command, stdin_text); pass stdin_text as run(..., input=...).
+    No-op (input None) when the profile has no DB password.
+    """
+    if not profile.db.password:
+        return cmd, None
+    return f"IFS= read -r PGPASSWORD && export PGPASSWORD && {cmd}", profile.db.password + "\n"
 
 
 def _ssh_base_args(profile: Profile) -> list[str]:
@@ -47,18 +79,55 @@ def _ssh_base_args(profile: Profile) -> list[str]:
     return args
 
 
+def _wrap_auth(profile: Profile, args: list[str]) -> tuple[list[str], dict | None]:
+    """Prefix args with `sshpass -e` (password via SSHPASS env, not argv) when
+    ssh.password is set. Without sshpass, ssh would hang waiting on a prompt,
+    so fail loudly instead."""
+    if not profile.ssh.password:
+        return args, None
+    if shutil.which("sshpass") is None:
+        raise SSHAuthError(
+            "ssh.password is set but `sshpass` is not installed, and interactive "
+            "password prompts cannot work here. Use ssh.identity_file (key auth) "
+            "instead, or install sshpass."
+        )
+    env = dict(os.environ)
+    env["SSHPASS"] = profile.ssh.password
+    return ["sshpass", "-e"] + args, env
+
+
+def _exec(profile: Profile, args: list[str], timeout: int, input: str | None = None):
+    args, env = _wrap_auth(profile, args)
+    try:
+        return subprocess.run(
+            args, capture_output=True, text=True, timeout=timeout, input=input, env=env
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise subprocess.TimeoutExpired(redact(profile, " ".join(map(str, exc.cmd))), exc.timeout) from None
+
+
 def run(
     profile: Profile,
     command: str,
     timeout: int = 60,
     check: bool = False,
+    input: str | None = None,
 ) -> CommandResult:
-    """Run `command` as the login user on the profile's SSH host."""
+    """Run `command` as the login user on the profile's SSH host.
+
+    `input` is fed to the remote command's stdin (used for secrets so they
+    stay out of argv). All text in the result is redacted of known secrets.
+    """
     args = _ssh_base_args(profile) + [command]
-    proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-    result = CommandResult(proc.returncode, proc.stdout, proc.stderr, command)
+    proc = _exec(profile, args, timeout, input)
+    result = CommandResult(
+        proc.returncode,
+        redact(profile, proc.stdout),
+        redact(profile, proc.stderr),
+        redact(profile, command),
+    )
     if check and not result.ok:
-        raise RemoteError(result, f"ssh command failed: {command!r}")
+        raise RemoteError(result, f"ssh command failed: {result.command!r}")
     return result
 
 
@@ -73,12 +142,8 @@ def sudo_run(
     Prefers passwordless sudo (requires a NOPASSWD sudoers entry for this
     user/command -- the recommended setup). Falls back to piping
     ssh.sudo_password only if it is configured, for parity with hosts that
-    don't have NOPASSWD set up yet. The password (if used) is passed via
-    stdin to `sudo -S`, never as a command-line argument, but note it is
-    still briefly visible to `ps` on the remote host via the `printf`
-    invocation -- this is a known limitation shared with how this
-    repository's maintenance has always been done; configure NOPASSWD sudo
-    to eliminate it entirely.
+    don't have NOPASSWD set up yet. The password (if used) is sent over ssh
+    stdin to `sudo -S`, never in a command line (local or remote).
     """
     noninteractive = f"sudo -n {command}"
     result = run(profile, noninteractive, timeout=timeout)
@@ -94,30 +159,29 @@ def sudo_run(
             )
         return result
 
-    quoted_pw = shlex.quote(profile.ssh.sudo_password)
-    piped = f"printf '%s\\n' {quoted_pw} | sudo -S -p '' {command}"
-    result = run(profile, piped, timeout=timeout)
+    piped = f"sudo -S -p '' {command}"
+    result = run(profile, piped, timeout=timeout, input=profile.ssh.sudo_password + "\n")
     if check and not result.ok:
-        raise RemoteError(result, f"sudo command failed: {command!r}")
+        raise RemoteError(result, f"sudo command failed: {redact(profile, command)!r}")
     return result
 
 
 def scp_to(profile: Profile, local_path: str, remote_path: str, timeout: int = 120) -> CommandResult:
-    args = ["scp", "-o", "ConnectTimeout=15", "-P", str(profile.ssh.port)]
+    args = ["scp", "-o", "ConnectTimeout=15", "-o", "BatchMode=yes" if not profile.ssh.password else "BatchMode=no", "-P", str(profile.ssh.port)]
     if profile.ssh.identity_file:
         args += ["-i", profile.ssh.identity_file]
     args += [local_path, f"{profile.ssh.user}@{profile.ssh.host}:{remote_path}"]
-    proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-    return CommandResult(proc.returncode, proc.stdout, proc.stderr, f"scp {local_path} -> {remote_path}")
+    proc = _exec(profile, args, timeout)
+    return CommandResult(proc.returncode, redact(profile, proc.stdout), redact(profile, proc.stderr), f"scp {local_path} -> {remote_path}")
 
 
 def scp_from(profile: Profile, remote_path: str, local_path: str, timeout: int = 120) -> CommandResult:
-    args = ["scp", "-o", "ConnectTimeout=15", "-P", str(profile.ssh.port)]
+    args = ["scp", "-o", "ConnectTimeout=15", "-o", "BatchMode=yes" if not profile.ssh.password else "BatchMode=no", "-P", str(profile.ssh.port)]
     if profile.ssh.identity_file:
         args += ["-i", profile.ssh.identity_file]
     args += [f"{profile.ssh.user}@{profile.ssh.host}:{remote_path}", local_path]
-    proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-    return CommandResult(proc.returncode, proc.stdout, proc.stderr, f"scp {remote_path} -> {local_path}")
+    proc = _exec(profile, args, timeout)
+    return CommandResult(proc.returncode, redact(profile, proc.stdout), redact(profile, proc.stderr), f"scp {remote_path} -> {local_path}")
 
 
 def chown_assetstore(profile: Profile) -> CommandResult:
@@ -154,13 +218,13 @@ def psql_query(
         cmd = f"sudo -u {shlex.quote(profile.db.ssh_peer_user)} {inner}"
         result = run(profile, cmd, timeout=timeout, check=True)
     else:
-        pw = profile.db.password or ""
         cmd = (
-            f"PGPASSWORD={shlex.quote(pw)} psql -h {shlex.quote(profile.db.host)} "
+            f"psql -h {shlex.quote(profile.db.host)} "
             f"-p {profile.db.port} -U {shlex.quote(profile.db.user)} "
             f"-d {shlex.quote(profile.db.name)} -Atc '{escaped_sql}' -F'{_ROW_SEP}'"
         )
-        result = run(profile, cmd, timeout=timeout, check=True)
+        cmd, stdin = with_pgpassword(profile, cmd)
+        result = run(profile, cmd, timeout=timeout, check=True, input=stdin)
 
     rows = []
     for line in result.stdout.splitlines():
@@ -173,19 +237,20 @@ def psql_query(
 def psql_execute(profile: Profile, sql: str, timeout: int = 60) -> CommandResult:
     """Run a SQL statement for its side effects (INSERT/UPDATE/DDL), no row parsing.
 
-    Callers performing writes should go through guards.require_db_write first.
+    Callers performing writes should go through guards.check_db_write first.
     """
     escaped_sql = sql.replace("'", "'\\''")
     if profile.db.ssh_peer_user:
         inner = f"psql -Atc '{escaped_sql}' {shlex.quote(profile.db.name)}"
         cmd = f"sudo -u {shlex.quote(profile.db.ssh_peer_user)} {inner}"
     else:
-        pw = profile.db.password or ""
         cmd = (
-            f"PGPASSWORD={shlex.quote(pw)} psql -h {shlex.quote(profile.db.host)} "
+            f"psql -h {shlex.quote(profile.db.host)} "
             f"-p {profile.db.port} -U {shlex.quote(profile.db.user)} "
             f"-d {shlex.quote(profile.db.name)} -Atc '{escaped_sql}'"
         )
+        cmd, stdin = with_pgpassword(profile, cmd)
+        return run(profile, cmd, timeout=timeout, check=True, input=stdin)
     return run(profile, cmd, timeout=timeout, check=True)
 
 

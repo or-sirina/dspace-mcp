@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "dspace": {
+      "type": "local",
+      "command": ["uv", "--project", "../..", "run", "dspace-mcp"],
+      "environment": {
+        "DSPACE_MCP_CONFIG": "config.demo.toml",
+        "DSPACE_MCP_PROFILE": "demo"
+      },
+      "enabled": true
+    }
+  }
+}

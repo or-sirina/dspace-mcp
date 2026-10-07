@@ -11,11 +11,27 @@ from __future__ import annotations
 
 import os
 import time
+from urllib.parse import urlparse
 
 import requests
 
 _MIN_PDF_BYTES = 10_000
 _UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+
+def safe_filename(name: str) -> str | None:
+    """Reduce a row-supplied filename to a bare basename; None if unusable."""
+    base = os.path.basename((name or "").replace("\\", "/").strip())
+    if not base or base in (".", "..") or "\x00" in base:
+        return None
+    return base
+
+
+def is_http_url(url: str) -> bool:
+    try:
+        return urlparse((url or "").strip()).scheme.lower() in ("http", "https")
+    except ValueError:
+        return False
 
 
 def _is_ssrn_url(url: str) -> bool:
@@ -29,6 +45,8 @@ def _looks_like_pdf(resp: requests.Response) -> bool:
 
 
 def _download(url: str, session: requests.Session) -> bytes | None:
+    if not is_http_url(url):
+        return None
     try:
         resp = session.get(url, timeout=30, allow_redirects=True)
         if resp.status_code == 200 and _looks_like_pdf(resp) and len(resp.content) > _MIN_PDF_BYTES:
@@ -93,7 +111,7 @@ def download_oa_pdfs(
     queue = []
     ssrn_skipped = 0
     for row in rows:
-        filename = (row.get("filename") or "").strip()
+        filename = safe_filename(row.get("filename") or "")
         if not filename:
             continue
         pdf_path = os.path.join(output_dir, filename)
