@@ -104,6 +104,10 @@ opencode                   # далее по DEMO.md
 > Сервер построен на `mcp` SDK 1.x (`FastMCP`); зависимость закреплена как
 > `mcp<2`, так как в 2.x этот API переименован.
 
+Пример на реальной книге: [`examples/book_severnaya_evropa_2026/`](examples/book_severnaya_evropa_2026/README.md)
+воспроизводит депонирование сборника конференции (78 докладов) этими
+инструментами и сверяет результат с исходными пакетами item за item'ом.
+
 ## Настройка
 
 Скопируйте `config.example.toml` в `~/.config/dspace-mcp/config.toml` (или
