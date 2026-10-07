@@ -18,6 +18,7 @@ live 7/8 instance for this server.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import tempfile
 
@@ -30,6 +31,12 @@ from . import saf as saf_mod
 RESOURCE_TYPE_COMMUNITY = 4
 RESOURCE_TYPE_COLLECTION = 3
 RESOURCE_TYPE_ITEM = 2
+
+_IDENT_RE = re.compile(r"^[A-Za-z0-9_]+$")
+_HANDLE_RE = re.compile(r"^\d+(\.\d+)?/\d+$")
+_SQL_COMMENT_RE = re.compile(r"/\*|--")
+# Statement-leading keywords that could end or escape the read-only transaction.
+_TXN_CONTROL = {"begin", "start", "commit", "end", "rollback", "abort", "savepoint", "release", "set", "reset"}
 
 
 def dspace_version_string(profile: Profile) -> str:
@@ -71,17 +78,35 @@ def ping(profile: Profile) -> dict:
 def raw_sql(profile: Profile, sql: str, allow_db_write: bool = False) -> dict:
     """Escape hatch for schema queries/edits this module doesn't cover.
 
-    Read-only (SELECT) statements run regardless of allow_db_write. Anything
-    else requires allow_db_write=True and is NOT auto-backed-up here -- call
-    db_backup() yourself first, or use a dedicated tool that does.
+    With allow_db_write=False the statement must start with SELECT/WITH and is
+    sent inside a `BEGIN READ ONLY;` transaction, so Postgres itself refuses
+    any write (e.g. `SELECT 1; DROP TABLE item`); SQL comments and
+    transaction-control statements (COMMIT, SET, ...) are rejected there since
+    they could escape that transaction. With allow_db_write=True anything runs
+    and is NOT auto-backed-up here -- call db_backup() yourself first, or use a
+    dedicated tool that does.
     """
     is_select = sql.strip().lower().startswith(("select", "with"))
-    if not is_select and not allow_db_write:
-        return {
-            "status": "blocked",
-            "reason": "Non-SELECT statement requires allow_db_write=True. "
-                      "Consider running db_backup() first.",
-        }
+    if not allow_db_write:
+        if not is_select:
+            return {
+                "status": "blocked",
+                "reason": "Non-SELECT statement requires allow_db_write=True. "
+                          "Consider running db_backup() first.",
+            }
+        if _SQL_COMMENT_RE.search(sql):
+            return {"status": "blocked", "reason": "SQL comments are not allowed in read-only mode."}
+        for stmt in sql.split(";"):
+            words = stmt.split(None, 1)
+            if words and words[0].lower() in _TXN_CONTROL:
+                return {
+                    "status": "blocked",
+                    "reason": f"Transaction-control/SET statement '{words[0]}' is not allowed in read-only mode.",
+                }
+        rows = ssh.psql_query(profile, f"BEGIN READ ONLY; {sql}")
+        if rows and rows[0] == ["BEGIN"]:
+            rows = rows[1:]
+        return {"status": "ok", "rows": rows}
     if is_select:
         rows = ssh.psql_query(profile, sql)
         return {"status": "ok", "rows": rows}
@@ -95,6 +120,11 @@ def resolve_field_id(profile: Profile, schema: str, element: str, qualifier: str
     Replaces hardcoding numbers like dc.title=70 -- those are per-installation
     and must never be assumed to hold on a different DSpace instance.
     """
+    if not _IDENT_RE.match(schema or "") or not _IDENT_RE.match(element or ""):
+        return {"status": "error", "reason": "schema and element must match [A-Za-z0-9_]+"}
+    if qualifier is not None and qualifier != "" and not _IDENT_RE.match(qualifier):
+        return {"status": "error", "reason": "qualifier must match [A-Za-z0-9_]+ (or be empty)"}
+    qualifier = qualifier or None
     qual_clause = "mfr.qualifier IS NULL" if qualifier is None else f"mfr.qualifier = '{qualifier}'"
     sql = (
         "SELECT mfr.metadata_field_id FROM metadatafieldregistry mfr "
@@ -140,6 +170,8 @@ def list_communities(profile: Profile, top_level_only: bool = True) -> dict:
 
 
 def list_collections(profile: Profile, community_handle: str | None = None) -> dict:
+    if community_handle and not _HANDLE_RE.match(community_handle):
+        return {"status": "error", "reason": "community_handle must look like 123456789/42"}
     title_field = resolve_field_id(profile, "dc", "title")
     if title_field.get("status") != "ok":
         return {"status": "error", "reason": "could not resolve dc.title field id", "detail": title_field}
@@ -265,15 +297,21 @@ def saf_import(
 
     remote_zip = f"/tmp/dspace_mcp_saf_{os.path.basename(local_saf_dir.rstrip('/'))}.zip"
     remote_extract_dir = remote_zip[:-4]
+    saf_base = os.path.basename(local_saf_dir.rstrip("/"))
+    zip_path = local_saf_dir.rstrip("/") + ".zip"
     remote_mapfile = f"/tmp/dspace_mcp_mapfile_{os.path.basename(local_saf_dir.rstrip('/'))}.txt"
 
     import_cmd = (
         f"import -a -e {shlex.quote(eperson)} -c {shlex.quote(collection_handle)} "
-        f"-s {shlex.quote(remote_extract_dir)} -m {shlex.quote(remote_mapfile)}"
+        f"-s {shlex.quote(remote_extract_dir + '/' + saf_base)} -m {shlex.quote(remote_mapfile)}"
+    )
+    unzip_cmd = (
+        f"rm -rf {shlex.quote(remote_extract_dir)} && mkdir -p {shlex.quote(remote_extract_dir)} "
+        f"&& unzip -oq {shlex.quote(remote_zip)} -d {shlex.quote(remote_extract_dir)}"
     )
     commands = [
-        f"scp {local_saf_dir}.zip -> {remote_zip}",
-        f"unzip {remote_zip} -d /tmp",
+        f"scp {zip_path} -> {remote_zip}",
+        unzip_cmd,
         f"{'sudo ' if version.import_needs_root else ''}dspace {import_cmd}",
     ]
     if version.needs_chown_after_root_write:
@@ -297,16 +335,16 @@ def saf_import(
         }
 
     import shutil as _shutil
-    zip_path = local_saf_dir.rstrip("/") + ".zip"
-    if not os.path.isfile(zip_path):
-        base_name = local_saf_dir.rstrip("/")
-        _shutil.make_archive(base_name, "zip", root_dir=os.path.dirname(base_name), base_dir=os.path.basename(base_name))
+    base_name = local_saf_dir.rstrip("/")
+    if os.path.isfile(zip_path):
+        os.remove(zip_path)  # never reuse a stale zip
+    _shutil.make_archive(base_name, "zip", root_dir=os.path.dirname(base_name), base_dir=os.path.basename(base_name))
 
     scp_result = ssh.scp_to(profile, zip_path, remote_zip, timeout=600)
     if not scp_result.ok:
         return {"status": "error", "stage": "scp", "stderr": scp_result.stderr}
 
-    unzip_result = ssh.run(profile, f"cd /tmp && unzip -oq {shlex.quote(remote_zip)}", timeout=120)
+    unzip_result = ssh.run(profile, unzip_cmd, timeout=120)
     if not unzip_result.ok:
         return {"status": "error", "stage": "unzip", "stderr": unzip_result.stderr}
 

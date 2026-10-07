@@ -1,0 +1,33 @@
+# Демонстрационный профиль: хост недостижим (TEST-NET-3, RFC 5737), секретов нет.
+[profile.demo]
+dspace_version = "6.3"
+ui = "jspui"
+cli_path = "/dspace/bin/dspace"
+install_root = "/dspace"
+admin_eperson = "admin@example.org"
+handle_prefix = "123456789"
+tomcat_service = "tomcat8"
+tomcat_user = "tomcat8"
+backup_dir = "/tmp/demo_db_backup"
+
+[profile.demo.ssh]
+host = "203.0.113.10"
+user = "demo"
+port = 22
+
+[profile.demo.db]
+host = "127.0.0.1"
+port = 5432
+name = "dspace"
+user = "dspace"
+
+[profile.demo.assetstore]
+root = "/dspace/assetstore"
+store_number = 0
+directory_levels = 3
+digits_per_level = 2
+
+[profile.demo.api]
+unpaywall_email = "demo@example.org"
+crossref_mailto = "demo@example.org"
+openalex_mailto = "demo@example.org"

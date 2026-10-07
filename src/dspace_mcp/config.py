@@ -46,9 +46,10 @@ class SSHConfig:
     user: str
     port: int = 22
     identity_file: str | None = None  # path to ssh private key; None = use ssh-agent/default
-    # Password auth is discouraged (plaintext in memory / command history on the
-    # remote host) but supported for parity with how this repo has been run so
-    # far. Prefer identity_file.
+    # Password auth is discouraged. It only works if `sshpass` is installed
+    # locally (the password is handed to it via the SSHPASS env var); otherwise
+    # ssh.run raises SSHAuthError rather than hanging on a prompt. Prefer
+    # identity_file. Secrets are redacted ('***') from errors and command text.
     password: str | None = None
     sudo_password: str | None = None  # often same as `password` on MGIMO
 

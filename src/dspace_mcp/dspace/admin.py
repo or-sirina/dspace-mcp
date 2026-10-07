@@ -42,13 +42,15 @@ def db_backup(profile: Profile, keep_days: int = 14) -> dict:
             f"pg_dump -Fc {shlex.quote(profile.db.name)} -f {shlex.quote(out_path)}"
         )
     else:
-        pw = profile.db.password or ""
         dump_cmd = (
-            f"PGPASSWORD={shlex.quote(pw)} pg_dump -h {shlex.quote(profile.db.host)} "
+            f"pg_dump -h {shlex.quote(profile.db.host)} "
             f"-p {profile.db.port} -U {shlex.quote(profile.db.user)} "
             f"-Fc {shlex.quote(profile.db.name)} -f {shlex.quote(out_path)}"
         )
-    result = ssh.run(profile, dump_cmd, timeout=600)
+    dump_input = None
+    if not profile.db.ssh_peer_user:
+        dump_cmd, dump_input = ssh.with_pgpassword(profile, dump_cmd)
+    result = ssh.run(profile, dump_cmd, timeout=600, input=dump_input)
     if not result.ok:
         return {"status": "error", "stage": "pg_dump", "stderr": result.stderr}
 
@@ -89,8 +91,8 @@ def collection_create(
     """
     version = resolve_version(profile.dspace_version)
 
-    gate = guards.check_db_write(allow_db_write, lambda: db_backup(profile), "collection_create")
-    if gate is not None and gate.get("status") == "blocked":
+    gate = guards.check_db_write(allow_db_write, lambda: db_backup(profile), "collection_create", confirm=confirm)
+    if guards.is_stop(gate):
         return gate
 
     xml = (
@@ -255,8 +257,8 @@ def set_collection_logo(
     remote_dir = os.path.dirname(remote_abs_path)
     bitstream_uuid = str(uuid_mod.uuid4())
 
-    gate = guards.check_db_write(allow_db_write, lambda: db_backup(profile), "set_collection_logo")
-    if gate is not None and gate.get("status") == "blocked":
+    gate = guards.check_db_write(allow_db_write, lambda: db_backup(profile), "set_collection_logo", confirm=confirm)
+    if guards.is_stop(gate):
         return gate
 
     preview = guards.check_confirm(
@@ -341,8 +343,8 @@ def set_intranet_access(
     to the relevant SAF `contents` file(s) by the caller (see saf.py) --
     this function does not know which bitstreams should be restricted.
     """
-    gate = guards.check_db_write(allow_db_write, lambda: db_backup(profile), "set_intranet_access")
-    if gate is not None and gate.get("status") == "blocked":
+    gate = guards.check_db_write(allow_db_write, lambda: db_backup(profile), "set_intranet_access", confirm=confirm)
+    if guards.is_stop(gate):
         return gate
 
     config_edits = [

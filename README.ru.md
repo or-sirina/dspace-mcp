@@ -59,7 +59,7 @@ MCP · Model Context Protocol · DSpace · институциональный р
 
 ## Установка
 
-Требуется Python >= 3.10 и [`uv`](https://docs.astral.sh/uv/).
+Требуется Python >= 3.11 и [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/or-sirina/dspace-mcp.git
@@ -86,6 +86,23 @@ uv pip install -e . --python .venv/bin/python
 Готовые сниппеты регистрации для Claude Desktop / Claude Code, Cursor, VS Code
 (Copilot, Cline, Roo Code), Continue.dev, opencode, DeepSeek Harness и любого
 универсального stdio-клиента — в [docs/INSTALLATION.md](docs/INSTALLATION.md).
+
+## Быстрая демонстрация (opencode)
+
+Готовый сценарий — в [`demo/opencode/`](demo/opencode/DEMO.md): проектный
+`opencode.json`, демо-профиль без секретов с недостижимым хостом, три
+тестовые статьи и пошаговый сценарий (список инструментов → сборка SAF →
+проверка → сухой прогон `saf_import` → сбор публикаций → `dspace_ping`).
+
+```bash
+cd demo/opencode
+opencode mcp list          # ожидается: dspace connected
+uv --directory ../.. run python demo/opencode/smoke_test.py   # без LLM
+opencode                   # далее по DEMO.md
+```
+
+> Сервер построен на `mcp` SDK 1.x (`FastMCP`); зависимость закреплена как
+> `mcp<2`, так как в 2.x этот API переименован.
 
 ## Настройка
 
@@ -289,7 +306,7 @@ root для `import`, насколько пригоден REST, как созд�
 - Автоматизированный набор `pytest` (`tests/`) покрывает локальные пути —
   сборку/валидацию/починку SAF, конвертацию OJS, хелперы
   дедупликации/нормализации, механизмы защищённой записи и разрешение версий
-  (Python 3.10–3.13).
+  (Python 3.11–3.13).
 
 ## Разработка
 

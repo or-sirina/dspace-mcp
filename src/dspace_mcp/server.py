@@ -6,6 +6,8 @@ Run with `dspace-mcp` (stdio transport) after configuring
 
 from __future__ import annotations
 
+import re
+
 from mcp.server.fastmcp import FastMCP
 
 from .config import ConfigError, Profile, get_profile
@@ -41,15 +43,24 @@ def _profile(profile: str | None) -> Profile | dict:
         return {"status": "error", "reason": str(exc)}
 
 
+_PGPASS_RE = re.compile(r"PGPASSWORD=\S+")
+
+
+def _scrub(text: str) -> str:
+    """Last-line defence: ssh.py already redacts known secrets; this also masks
+    any stray PGPASSWORD=... assignment before text reaches the agent."""
+    return _PGPASS_RE.sub("PGPASSWORD=***", text)
+
+
 def _guard(fn, *args, **kwargs) -> dict:
     """Run fn(*args, **kwargs), translating SSH/config errors into a dict
     instead of letting a stack trace reach the agent."""
     try:
         return fn(*args, **kwargs)
     except RemoteError as exc:
-        return {"status": "error", "stage": "remote_exec", "reason": str(exc)}
+        return {"status": "error", "stage": "remote_exec", "reason": _scrub(str(exc))}
     except Exception as exc:  # noqa: BLE001 - last-resort safety net for tool calls
-        return {"status": "error", "reason": f"{type(exc).__name__}: {exc}"}
+        return {"status": "error", "reason": _scrub(f"{type(exc).__name__}: {exc}")}
 
 
 # =========================================================================
